@@ -26,7 +26,7 @@ const key = (x, y) => y * CW + x;
  * guess and not an authority. A route through a door that turns out to be shut produces a tape
  * that fails when it is run, which is exactly the right outcome.
  */
-function route(level, from, to) {
+function route(level, from, to, avoid = null) {
   const prev = new Int32Array(CW * CH).fill(-1);
   const seen = new Uint8Array(CW * CH);
   const q = [from];
@@ -40,6 +40,11 @@ function route(level, from, to) {
       const k = key(nx, ny);
       if (seen[k]) continue;
       if (level.tiles[k] === WALL) continue;         // doors deliberately NOT treated as solid
+      // Cells a crate is sitting in, when the caller knows where the crates are. Without this, the
+      // walk AFTER a push routed straight back through the crate it had just placed and shoved it
+      // one cell off the plate — a plan that undid its own work, which the search then had to
+      // discard, hiding whatever it would have found next.
+      if (avoid && avoid.has(k) && !(nx === to[0] && ny === to[1])) continue;
       seen[k] = 1; prev[k] = key(x, y);
       q.push([nx, ny]);
     }
@@ -88,41 +93,82 @@ export function candidates(level) {
     }
   }
 
-  // crate plans: walk to the cell behind the crate, then push it along a line to a plate
+  // Crate plans.
+  //
+  // A push is: get to the cell behind the crate, then hold one direction. The plans below chain up
+  // to two of them, and then optionally walk somewhere afterwards — because the family of plans the
+  // search can express IS the strength of the lower bound it reports, and a room whose solution is
+  // "shove both crates in one discharge" was being reported as needing an extra discharge purely
+  // because this function could not say that sentence.
+  const pushes = [];
   for (const [cx, cy] of level.crates) {
-    for (const p of level.plates) {
+    for (const pl of level.plates) {
       for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-        // a crate only moves in straight lines, so only plates on a line from it are reachable
-        const steps = dx ? (p.x - cx) / dx : (p.y - cy) / dy;
+        const steps = dx ? (pl.x - cx) / dx : (pl.y - cy) / dy;
         if (!Number.isInteger(steps) || steps <= 0) continue;
-        if (dx && p.y !== cy) continue;
-        if (dy && p.x !== cx) continue;
-        const behind = [cx - dx, cy - dy];
-        const r = route(level, level.start, behind);
-        if (!r) continue;
-        const t = tapeFor(r);
-        let i = (r.length - 1) * MOVE_TICKS;
-        const d = DIR_OF(dx, dy);
-        for (let s = 0; s < steps && i < LOOP; s++)
-          for (let k = 0; k < MOVE_TICKS && i < LOOP; k++) t[i++] = d;
-        out.push({ label: `push crate onto plate ${p.id}`, tape: t });
-
-        // and the same push, then step off and go somewhere else useful
-        for (const t2 of level.plates) {
-          if (t2 === p) continue;
-          const back = route(level, [p.x - dx, p.y - dy], [t2.x, t2.y]);
-          if (!back) continue;
-          const t3 = Uint8Array.from(t);
-          let j = i;
-          for (let c = 1; c < back.length && j < LOOP; c++) {
-            const dd = DIR_OF(back[c][0] - back[c - 1][0], back[c][1] - back[c - 1][1]);
-            for (let k = 0; k < MOVE_TICKS && j < LOOP; k++) t3[j++] = dd;
-          }
-          out.push({ label: `push crate onto ${p.id}, then plate ${t2.id}`, tape: t3 });
-        }
+        if (dx && pl.y !== cy) continue;
+        if (dy && pl.x !== cx) continue;
+        pushes.push({ crate: [cx, cy], plate: pl, dir: [dx, dy], steps,
+                      behind: [cx - dx, cy - dy], ends: [pl.x - dx, pl.y - dy],
+                      label: `crate ${cx},${cy} onto plate ${pl.id}` });
       }
     }
   }
+
+  /** Write a walk from `a` to `b` into `t` starting at `i`; returns the new index, or -1. */
+  const walk = (t, i, a, b, avoid = null) => {
+    const r = route(level, a, b, avoid);
+    if (!r) return -1;
+    for (let c = 1; c < r.length && i < LOOP; c++) {
+      const d = DIR_OF(r[c][0] - r[c - 1][0], r[c][1] - r[c - 1][1]);
+      for (let k = 0; k < MOVE_TICKS && i < LOOP; k++) t[i++] = d;
+    }
+    return i;
+  };
+  const shove = (t, i, p) => {
+    const d = DIR_OF(p.dir[0], p.dir[1]);
+    for (let s = 0; s < p.steps && i < LOOP; s++) {
+      for (let k = 0; k < MOVE_TICKS && i < LOOP; k++) t[i++] = d;
+    }
+    return i;
+  };
+
+  for (const a of pushes) {
+    const t = new Uint8Array(LOOP);
+    let i = walk(t, 0, level.start, a.behind);
+    if (i < 0) continue;
+    i = shove(t, i, a);
+    out.push({ label: a.label, tape: Uint8Array.from(t) });
+
+    // ...then go and hold something else with the body the crate just freed
+    const after = (...placed) => new Set(placed.map((q) => key(q.plate.x, q.plate.y)));
+
+    for (const t2 of level.plates) {
+      if (t2 === a.plate) continue;
+      const t3 = Uint8Array.from(t);
+      const j = walk(t3, i, a.ends, [t2.x, t2.y], after(a));
+      if (j < 0) continue;
+      out.push({ label: `${a.label}, then plate ${t2.id}`, tape: t3 });
+    }
+
+    // ...or push the OTHER crate as well, in the same ten seconds
+    for (const b of pushes) {
+      if (b.crate[0] === a.crate[0] && b.crate[1] === a.crate[1]) continue;
+      const t4 = Uint8Array.from(t);
+      let j = walk(t4, i, a.ends, b.behind, after(a));
+      if (j < 0) continue;
+      j = shove(t4, j, b);
+      out.push({ label: `${a.label}, then ${b.label}`, tape: Uint8Array.from(t4) });
+
+      for (const t2 of level.plates) {
+        if (t2 === a.plate || t2 === b.plate) continue;
+        const t5 = Uint8Array.from(t4);
+        if (walk(t5, j, b.ends, [t2.x, t2.y], after(a, b)) < 0) continue;
+        out.push({ label: `${a.label}, then ${b.label}, then plate ${t2.id}`, tape: t5 });
+      }
+    }
+  }
+
   return out;
 }
 
