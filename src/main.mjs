@@ -1,10 +1,10 @@
 // Boot, loop, scenes.
 
 import { Screen, W, H, code } from './pixel.mjs';
-import { CHARGED, DYING, FIRED, SETS, validate } from './palette.mjs';
+import { CHARGED, DYING, FIRED, SETS, validate, collisions } from './palette.mjs';
 import {
-  newGame, step, reset, rewind, run, LOOP, TPS, CW, CELL,
-  NONE, LEFT, RIGHT, UP, DOWN, ACT,
+  newGame, step, reset, rewind, run, LOOP, TPS, CW, CH, CELL, WALL, DOOR,
+  NONE, LEFT, RIGHT, UP, DOWN,
 } from './sim.mjs';
 import { LEVELS } from './levels.mjs';
 import { draw, addShake, fx, OX, OY, abandonBox, drawAbandon } from './render.mjs';
@@ -45,7 +45,9 @@ addEventListener('keydown', (e) => {
   e.preventDefault();
   audio.start();
   held.add(k);
-  if (k !== 'left' && k !== 'right' && k !== 'up' && k !== 'down') buffered.push(k);
+  // `e.repeat` guards the one-shots. Without it, holding Q abandoned the discharge once per
+  // auto-repeat and stacked a dozen overlapping sounds on top of each other.
+  if (!e.repeat && k !== 'left' && k !== 'right' && k !== 'up' && k !== 'down') buffered.push(k);
 }, { passive: false });
 
 addEventListener('keyup', (e) => {
@@ -83,19 +85,65 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   const cx = Math.floor((x - OX) / CELL), cy = Math.floor((y - OY) / CELL);
-  if (cx < 0 || cy < 0 || cx >= CW || cy >= 16) return;
+  if (cx < 0 || cy < 0 || cx >= CW || cy >= CH) return;
+  if (state.level.tiles[cy * CW + cx] === WALL) return;       // a tap on a wall is not a destination
   walkTo = { x: cx, y: cy };
 }, { passive: true });
 
-/** One step of the direction that reduces the distance to where the thumb pointed. */
+/**
+ * The first step of a real route to where the thumb pointed.
+ *
+ * This was greedy — horizontal until the columns matched, then vertical — with a comment claiming
+ * that walking into a wall and stopping was "honest". It is not: `walkTo` was only ever cleared on
+ * ARRIVAL, so a body that jammed went on pushing into the wall for the rest of the discharge. In
+ * the first room, tapping the core (the obvious first tap) burned all ten seconds against a
+ * bulkhead in silence. A path is cheap on a 24x16 grid; search it.
+ */
+function routeStep(from, target) {
+  const w = state.world;
+  const solidAt = (x, y) => {
+    if (x < 0 || y < 0 || x >= CW || y >= CH) return true;
+    const t = state.level.tiles[y * CW + x];
+    if (t === WALL) return true;
+    if (t === DOOR) return !w.open.has(y * CW + x);
+    return false;
+  };
+  const start = from.y * CW + from.x, goal = target.y * CW + target.x;
+  const prev = new Int32Array(CW * CH).fill(-1);
+  const seen = new Uint8Array(CW * CH);
+  seen[start] = 1;
+  const q = [start];
+  for (let h = 0; h < q.length; h++) {
+    if (q[h] === goal) break;
+    const x = q[h] % CW, y = (q[h] / CW) | 0;
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const nx = x + dx, ny = y + dy, k = ny * CW + nx;
+      if (nx < 0 || ny < 0 || nx >= CW || ny >= CH || seen[k] || solidAt(nx, ny)) continue;
+      seen[k] = 1; prev[k] = q[h]; q.push(k);
+    }
+  }
+  if (!seen[goal]) return null;                 // nowhere to walk: say so rather than shoving
+  let cur = goal;
+  while (prev[cur] !== start && prev[cur] !== -1) cur = prev[cur];
+  if (prev[cur] === -1) return NONE;
+  const nx = cur % CW, ny = (cur / CW) | 0;
+  return nx < from.x ? LEFT : nx > from.x ? RIGHT : ny < from.y ? UP : DOWN;
+}
+
 function towards(target) {
   const b = state.world.bodies[state.world.bodies.length - 1];
   if (!b) return NONE;
   if (b.x === target.x && b.y === target.y) { walkTo = null; return NONE; }
-  // horizontal first, which matches how the rooms are laid out; if blocked, the body simply
-  // stands still and the player taps somewhere else, which is honest
-  if (b.x !== target.x) return b.x < target.x ? RIGHT : LEFT;
-  return b.y < target.y ? DOWN : UP;
+  const d = routeStep(b, target);
+  if (d === null) {
+    // unreachable from here — drop the destination and SAY so, rather than leaning on a wall for
+    // the rest of the discharge
+    walkTo = null;
+    audio.sfx.bump();
+    say('no way through');
+    return NONE;
+  }
+  return d;
 }
 
 const DT_MS = 1000 / TPS;
@@ -127,26 +175,29 @@ function tick() {
     return;
   }
   if (scene === 'done') {
-    if (presses.includes('ok')) { scene = 'title'; room = 0; load(0); }
+    if (presses.includes('ok')) { scene = 'title'; room = 0; load(0); audio.music.start(); }
     return;
   }
   if (noteT > 0) noteT--;
   if (fired > 0) fired--;
   if (paused) return;
 
-  if (presses.includes('restart')) { reset(state); walkTo = null; audio.sfx.spent(); say('room reset'); return; }
-  if (presses.includes('rewind')) {
-    rewind(state); walkTo = null; audio.sfx.spent();
-    say('discharge abandoned');
-    return;
-  }
-
+  // The win is resolved BEFORE restart and abandon are read. Handled the other way round, pressing
+  // R inside the 1.2s whiteout threw away a room you had just finished and sent you back to the
+  // first discharge — and the whiteout is exactly when a player reaches for a key.
   if (state.over === 'win') {
     if (fired === 0) {
       room++;
       if (room >= LEVELS.length) { scene = 'done'; audio.music.stop(); return; }
       load(room);
     }
+    return;
+  }
+
+  if (presses.includes('restart')) { reset(state); walkTo = null; audio.sfx.spent(); say('room reset'); return; }
+  if (presses.includes('rewind')) {
+    rewind(state); walkTo = null; audio.sfx.spent();
+    say('discharge abandoned');
     return;
   }
 
@@ -158,7 +209,6 @@ function tick() {
   else if (held.has('down')) input = DOWN;
   if (input !== NONE) walkTo = null;
   else if (walkTo) input = towards(walkTo);
-  if (held.has('ok')) input |= ACT;
 
   const before = state.tapes.length;
   step(state, input);
@@ -210,12 +260,15 @@ function consume(tapesBefore) {
 }
 
 function load(i) {
+  audio.music.start();                 // a no-op unless the hum was stopped by finishing the game
   state = newGame(LEVELS[i], i + 1);
   walkTo = null;
   fired = 0;
   wasHigh = 0; wasOpen = 0; wasMoving = false;
   audio.music.reset();
-  say(LEVELS[i].name);
+  // The name is already printed at the top of every frame. `say`ing it here put it on screen twice
+  // and hid the `teaches` line — the game's only tutorial text — for the first two and a half
+  // seconds of each room, which is exactly when it is wanted.
 }
 
 function say(text) { note = clip(text); noteT = 150; }
@@ -327,6 +380,11 @@ fit();
 if (DEV) {
   const problems = Object.entries(SETS).flatMap(([k, s]) => validate(s, k));
   console[problems.length ? 'error' : 'log']('palettes', problems.length ? problems : 'legal');
+  // Advisory, not an error: two palettes sharing a colour is often deliberate. It is printed so
+  // that somebody has to look, because the one time it was not deliberate it made the subject of
+  // the game invisible for eight and a half seconds out of every ten.
+  const clashes = Object.entries(SETS).flatMap(([k, s]) => collisions(s, k));
+  if (clashes.length) console.warn('palette colour collisions', clashes);
   globalThis.__latch = {
     get state() { return state; },
     get room() { return room; },

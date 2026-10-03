@@ -93,6 +93,38 @@ export function candidates(level) {
     }
   }
 
+  // Two destinations in one discharge.
+  //
+  // The family was "walk somewhere and wait", and a lower bound built from it says only "no
+  // one-destination plan does better". A ghost that holds one plate and then walks to another is
+  // an obvious thing for a player to do and was unrepresentable here — and a room fell to exactly
+  // that, reported as needing three discharges when two were enough.
+  for (const first of targets) {
+    const r1 = route(level, level.start, first.at);
+    if (!r1) continue;
+    for (const second of targets) {
+      if (second === first) continue;
+      const r2 = route(level, first.at, second.at);
+      if (!r2) continue;
+      for (const stay of [120, 240, 360]) {
+        const t = new Uint8Array(LOOP);
+        let i = 0;
+        for (let c = 1; c < r1.length && i < LOOP; c++) {
+          const d = DIR_OF(r1[c][0] - r1[c - 1][0], r1[c][1] - r1[c - 1][1]);
+          for (let k = 0; k < MOVE_TICKS && i < LOOP; k++) t[i++] = d;
+        }
+        i = Math.max(i, stay);
+        if (i >= LOOP) continue;
+        for (let c = 1; c < r2.length && i < LOOP; c++) {
+          const d = DIR_OF(r2[c][0] - r2[c - 1][0], r2[c][1] - r2[c - 1][1]);
+          for (let k = 0; k < MOVE_TICKS && i < LOOP; k++) t[i++] = d;
+        }
+        const lab = `${first.label} for ${stay}, then ${second.label}`;
+        out.push({ label: second.label === 'core' ? `core, after ${first.label}` : lab, tape: t });
+      }
+    }
+  }
+
   // Crate plans.
   //
   // A push is: get to the cell behind the crate, then hold one direction. The plans below chain up
@@ -166,6 +198,21 @@ export function candidates(level) {
         if (walk(t5, j, b.ends, [t2.x, t2.y], after(a, b)) < 0) continue;
         out.push({ label: `${a.label}, then ${b.label}, then plate ${t2.id}`, tape: t5 });
       }
+
+      // ...and then stand on the core. Labelled `core` so the search will consider it as a FINAL
+      // tape: without this the family could say "push both crates" and could say "walk to the core"
+      // but could never say both in one discharge — and a room that fell to exactly that plan was
+      // reported as needing two discharges when one was enough.
+      const t6 = Uint8Array.from(t4);
+      if (walk(t6, j, b.ends, [level.core.x, level.core.y], after(a, b)) >= 0) {
+        out.push({ label: `core, after ${a.label} and ${b.label}`, tape: t6 });
+      }
+    }
+
+    // a single push, then the core
+    const t7 = Uint8Array.from(t);
+    if (walk(t7, i, a.ends, [level.core.x, level.core.y], new Set([key(a.plate.x, a.plate.y)])) >= 0) {
+      out.push({ label: `core, after ${a.label}`, tape: t7 });
     }
   }
 
@@ -188,7 +235,10 @@ function solve(level, limit) {
   const cands = candidates(level);
   const cores = cands.filter((c) => c.label.startsWith('core'));
   const holds = cands.filter((c) => !c.label.startsWith('core'));
-  const crateish = (c) => c.label.startsWith('push');
+  // `startsWith('push')` — the labels were renamed to `crate x,y onto plate n` and this was not,
+  // so the reordering branch below has never once executed. Fourth time tonight that a thing which
+  // looked like it was being tested was not running at all.
+  const crateish = (c) => c.label.includes('crate ');
   let tried = 0;
 
   const attempt = (plan) => {

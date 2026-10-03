@@ -168,6 +168,9 @@ function drawCrates(screen, state) {
   }
 }
 
+/** How far down the cell a figure's body starts, so an overlay can cover the figure and not the floor. */
+const bodyTop = () => 0;
+
 /** A person: four pixels wide, with a head, facing the way they last moved. */
 function figure(screen, x, y, pal, face, walking, t) {
   const bob = walking && Math.floor(t * 10) % 2 ? 1 : 0;
@@ -188,7 +191,6 @@ function drawBodies(screen, state, t) {
   // ghosts first, so the live body is never hidden behind one of its own afterimages
   for (let i = 0; i < w.bodies.length; i++) {
     const b = w.bodies[i];
-    if (!b.alive) continue;
     const live = i === w.bodies.length - 1 && state.live.length > 0;
     const { px, py } = at(b);
     const x = px + shakeX, y = py + shakeY;
@@ -198,8 +200,17 @@ function drawBodies(screen, state, t) {
       // be on screen at once and none of them is the person you are controlling. Drawn solid they
       // were simply four more people in different colours. Dithered every frame, they read as
       // something burned into the dark, and the live body is the only solid figure in the room.
+      // Dithered between two entries of the GHOST's own palette — never against the deck.
+      //
+      // This dithered entry 1 of the ghost palette against entry 1 of the deck palette, and when
+      // the deck was darkened those two became the same navy. So the "dither" was a solid rectangle
+      // of deck colour painted over the figure drawn on the line above, covering the whole cell
+      // including any plate underneath. The afterimages — the entire subject of this game — were
+      // invisible for eight and a half seconds of every ten, and the plate a ghost was holding was
+      // erased along with it. They reappeared only in the dying palette, where the two entries
+      // happen to differ.
       figure(screen, x, y, P_GHOST, b.face, b.moving, t);
-      screen.dither(x + 1, y, CELL - 2, CELL, code(P_GHOST, 1), code(PLATING, 1),
+      screen.dither(x + 2, y + bodyTop(b), 4, 7, code(P_GHOST, 3), code(P_GHOST, 1),
                     (i + Math.floor(t * 8)) & 1);
     } else {
       figure(screen, x, y, P_YOU, b.face, b.moving, t);

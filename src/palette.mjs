@@ -51,8 +51,13 @@ export const CHARGED = set('charged', C.black,
   ],
   [
     [C.umber,  C.gold,   C.cream],          // you, warm, the only warm thing in the room
-    [C.navy,   C.blue,   C.sky],            // an afterimage: light, not a body
-    [C.rust,   C.amber,  C.sand],           // a crate
+    // An afterimage: light, not a body. It shared `navy` with the deck it is always drawn on and
+    // `sky` with the bulkheads, so the dither that makes it read as light was invisible against
+    // the floor. Nothing a sprite is drawn over may share a colour with it.
+    [C.indigo, C.blue,   C.ice],
+    // A crate. `sand` was also the bright end of the device-at-rest ramp, so a crate sitting on
+    // an unlit plate — which is the entire point of a crate — lost its top edge into the plate.
+    [C.rust,   C.amber,  C.cream],
     [C.teal,   C.spring, C.white],          // the core
   ]);
 
@@ -127,7 +132,7 @@ export function validate(s, name = s.name) {
   const n = onScreen(s).size;
   if (n > MAX_ON_SCREEN) bad.push(`${name}: ${n} colours, hardware allows ${MAX_ON_SCREEN}`);
 
-  // The trap that has cost this project a frame-and-a-half of work across three games: an entry
+  // The trap that has cost this project a frame-and-a-half of work across four games: an entry
   // holding the backdrop colour makes anything drawn with it invisible. Legal, and almost never
   // intended, so it is worth saying out loud rather than discovering in a screenshot.
   const bd = MASTER[s.backdrop];
@@ -136,4 +141,29 @@ export function validate(s, name = s.name) {
                                    `anything drawn with it is invisible`);
   }));
   return bad;
+}
+
+/**
+ * Pairs of entries that are the same colour, across palettes.
+ *
+ * The backdrop check above is one case of a bigger one, and the bigger one shipped: the ghost
+ * palette's first entry and the deck's first entry were both `$01`, so a dither between them — the
+ * effect that makes an afterimage read as light rather than as a person — was a solid rectangle of
+ * deck colour painted over the afterimage. Every sprite is drawn on top of some background, so any
+ * sprite entry that matches a background entry is a place something can vanish.
+ *
+ * This is a warning rather than an error: two palettes sharing a colour is often deliberate and
+ * only matters where one is drawn over the other. It is printed so somebody has to look.
+ */
+export function collisions(s, name = s.name) {
+  const out = [];
+  s.spr.forEach((p, i) => p.forEach((e, j) => {
+    s.bg.forEach((q, k) => q.forEach((f, l) => {
+      if (MASTER[e] === MASTER[f]) {
+        out.push(`${name}: spr${i} entry ${j + 1} and bg${k} entry ${l + 1} are both ` +
+                 `${MASTER[e]} — anything drawn in one over the other disappears`);
+      }
+    }));
+  }));
+  return out;
 }

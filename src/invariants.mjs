@@ -14,7 +14,7 @@ const key = (x, y) => y * CW + x;
 /** A compact fingerprint of everything that can be seen. Two runs agree or they do not. */
 export function fingerprint(w) {
   const parts = [w.tick, w.done ? 1 : 0];
-  for (const b of w.bodies) parts.push(b.x, b.y, b.sub, b.moving ? 1 : 0, b.alive ? 1 : 0);
+  for (const b of w.bodies) parts.push(b.x, b.y, b.sub, b.moving ? 1 : 0);
   for (const c of w.crates) parts.push(c.x, c.y, c.sub, c.moving ? 1 : 0);
   parts.push(...[...w.high].sort((a, b) => a - b), -1, ...[...w.open].sort((a, b) => a - b));
   return parts.join(',');
@@ -51,10 +51,11 @@ export function checkInvariants(state) {
     if (b.x >= 0 && b.x < CW && b.y >= 0 && b.y < CH) {
       const t = lv.tiles[key(b.x, b.y)];
       say(t !== WALL, `body ${i} is inside a wall at ${b.x},${b.y}`);
-      // a body standing in a doorway is only legal while that door is open
-      if (t === DOOR && !b.moving) {
-        say(w.open.has(key(b.x, b.y)), `body ${i} is standing in a shut door at ${b.x},${b.y}`);
-      }
+      // NOTE: a body standing in a doorway when the door shuts is ordinary play, not a fault.
+      // `solid()` gates ENTRY to a cell and nothing else, so you can be in a doorway when the plate
+      // holding it goes LOW, and you can walk back out. There was an assertion here that this was
+      // illegal — a rule the simulation has never had, asserted about it, which would have fired on
+      // a perfectly normal sequence of moves the moment a harness reached one.
     }
     // a body mid-step is always exactly one cell from where it came
     if (b.moving) {
@@ -87,7 +88,7 @@ export function checkInvariants(state) {
   const high = new Set();
   for (const p of lv.plates) {
     const k = key(p.x, p.y);
-    const onIt = w.bodies.some((b) => b.alive && b.x === p.x && b.y === p.y) ||
+    const onIt = w.bodies.some((b) => b.x === p.x && b.y === p.y) ||
                  w.crates.some((c) => c.x === p.x && c.y === p.y);
     if (onIt) high.add(k);
   }

@@ -187,6 +187,14 @@ let humOsc = null, humGain = null, humSub = null;
 export const music = {
   charge: 1,
 
+  /**
+   * Bring the hum up. Safe to call again after `stop()`.
+   *
+   * `stop()` nulls the oscillators, and nothing ever started them again: `audio.start()` returns
+   * early once the context exists, and `setCharge` bails when there is no oscillator. So finishing
+   * the game killed the capacitor-bank hum for the rest of the session — and the hum is how the
+   * ten-second clock is audible without being looked at.
+   */
   start() {
     if (!started || humOsc) return;
     humOsc = ctx.createOscillator();

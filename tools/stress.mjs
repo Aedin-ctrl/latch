@@ -7,7 +7,7 @@
 // into a corner, standing in a doorway at the exact tick its plate goes LOW.
 
 import { LEVELS } from '../src/levels.mjs';
-import { newGame, step, reset, rewind, LOOP, LEFT, RIGHT, UP, DOWN, NONE, ACT } from '../src/sim.mjs';
+import { newGame, step, reset, rewind, LOOP, LEFT, RIGHT, UP, DOWN, NONE } from '../src/sim.mjs';
 import { checkInvariants, checkReplay } from '../src/invariants.mjs';
 import { makeRng } from '../src/rng.mjs';
 
@@ -21,7 +21,7 @@ const DIRS = [NONE, LEFT, RIGHT, UP, DOWN];
 const dir = (rng) => DIRS[rng.int(0, DIRS.length - 1)];
 
 /** Everything, as fast as possible. */
-const mash = (rng) => dir(rng) | (rng.chance(0.2) ? ACT : 0);
+const mash = (rng) => dir(rng);
 /** One direction, for the whole ten seconds, into whatever is there. */
 const press = (rng, memo) => (memo.d ??= DIRS[rng.int(1, 4)]);
 /** Nothing at all. Every discharge wasted, for ever. */
@@ -62,7 +62,7 @@ for (const [name, policy] of Object.entries(POLICIES)) {
       const before = state.world.bodies.map((b) => `${b.x},${b.y}`).join('|');
       const cratesBefore = state.world.crates.map((c) => `${c.x},${c.y}`).join('|');
       step(state, inp);
-      seenInput.add(inp & 15);
+      seenInput.add(inp & 7);
       if (state.world.bodies.map((b) => `${b.x},${b.y}`).join('|') !== before) cellsWalked++;
       if (state.world.crates.map((c) => `${c.x},${c.y}`).join('|') !== cratesBefore) cratesMoved++;
       platesPressed += state.world.high.size ? 1 : 0;

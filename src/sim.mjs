@@ -21,9 +21,12 @@ export const CW = 24, CH = 16;           // the room, in cells
 export const CELL = 8;
 export const SUB = 8;                    // sub-cell steps per cell, so position stays an integer
 
-// one direction and one action, packed into a byte so a tape is a Uint8Array
+// A direction, in a byte, so a tape is a Uint8Array.
+//
+// There used to be an ACT bit here, OR'd on by the input layer and masked straight off again by
+// `step` — an action button that did nothing, in a game whose README said it had one. The game's
+// verb is where you go and when; it does not need a second button, so there is not one.
 export const NONE = 0, LEFT = 1, RIGHT = 2, UP = 3, DOWN = 4;
-export const ACT = 8;                    // bit 3, OR'd onto the direction
 
 const DX = [0, -1, 1, 0, 0];
 const DY = [0, 0, 0, -1, 1];
@@ -41,7 +44,10 @@ export const MOVE_TICKS = 6;
  * there is never a float anywhere in this simulation and two runs can be compared exactly.
  */
 function newBody(x, y) {
-  return { x, y, fromX: x, fromY: y, sub: 0, dir: NONE, moving: false, face: RIGHT, alive: true };
+  // No `alive` flag. One existed, was set true, and was never cleared by anything — a door
+  // closing on a body was considered and not built, and carrying the flag made every check that
+  // read it look like it was guarding a rule that does not exist.
+  return { x, y, fromX: x, fromY: y, sub: 0, dir: NONE, moving: false, face: RIGHT };
 }
 
 const inBounds = (x, y) => x >= 0 && x < CW && y >= 0 && y < CH;
@@ -95,7 +101,7 @@ function resolveSignals(w) {
   for (const p of w.level.plates) {
     const k = key(p.x, p.y);
     let pressed = false;
-    for (const b of w.bodies) if (b.alive && b.x === p.x && b.y === p.y) { pressed = true; break; }
+    for (const b of w.bodies) if (b.x === p.x && b.y === p.y) { pressed = true; break; }
     if (!pressed) for (const c of w.crates) if (c.x === p.x && c.y === p.y) { pressed = true; break; }
     if (pressed) w.high.add(k);
   }
@@ -119,7 +125,7 @@ function tryStep(w, b, dir, pushOrder) {
     if (solid(w, cx, cy) || crateAt(w, cx, cy)) return false;
     // bodies do not collide with each other (an afterimage is light, not a body) but a crate
     // cannot be pushed into one, or a ghost could be shoved out of its own recorded path
-    for (const o of w.bodies) if (o.alive && o.x === cx && o.y === cy) return false;
+    for (const o of w.bodies) if (o.x === cx && o.y === cy) return false;
     c.fromX = c.x; c.fromY = c.y;
     c.x = cx; c.y = cy;
     c.sub = 0; c.moving = true; c.pushedBy = pushOrder;
@@ -155,7 +161,6 @@ function stepWorld(w, inputs) {
   // first, in the past.
   for (let i = 0; i < w.bodies.length; i++) {
     const b = w.bodies[i];
-    if (!b.alive) continue;
     const inp = inputs[i] ?? NONE;
     const dir = inp & 7;
 
@@ -173,7 +178,7 @@ function stepWorld(w, inputs) {
 
   // The core: you are standing on it, and everything it is wired to is HIGH, on the same tick.
   const live = w.bodies[w.bodies.length - 1];
-  if (live && live.alive && !w.done) {
+  if (live && !w.done) {
     const core = w.level.core;
     if (live.x === core.x && live.y === core.y && !live.moving &&
         core.plates.every((pk) => w.high.has(pk))) {
@@ -252,7 +257,7 @@ export function newGame(level, seed = 1) {
 export function step(state, input = NONE) {
   if (state.over) return state;
 
-  state.live.push(input & 15);
+  state.live.push(input & 7);
   const w = run(state.level, state.tapes, state.live);
   state.world = w;
   state.events.push(...w.events);
