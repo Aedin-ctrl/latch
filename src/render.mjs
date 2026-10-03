@@ -122,13 +122,31 @@ function drawRoom(screen, state) {
           screen.hline(px, py, CELL, code(REST, 3));
         }
       } else if (tile === CORE) {
+        // The way out, and the first version of it was a dim four-pixel dot that read as debris.
+        // It is a hatch with a ring now, in its own palette whether or not it is ready, and it
+        // CARRIES ITS WIRING: one pip per plate it needs, lit as that plate goes HIGH. In a room
+        // with four plates and a core that wants three of them, nothing on screen said which three.
         const ready = lv.core.plates.every((pk) => w.high.has(pk));
-        const pal = ready ? P_CORE : REST;
         for (let dy = 0; dy < CELL; dy++) {
           for (let dx = 0; dx < CELL; dx++) {
             const d = Math.abs(dx - 3.5) + Math.abs(dy - 3.5);
             if (d > 4) continue;
-            screen.px(px + dx, py + dy, code(pal, d > 2.5 ? 1 : d > 1.5 ? 2 : 3));
+            screen.px(px + dx, py + dy,
+                      code(P_CORE, ready ? (d > 2.5 ? 2 : 3) : (d > 2.5 ? 1 : 2)));
+          }
+        }
+        screen.hline(px + 2, py, 4, code(P_CORE, ready ? 3 : 1));
+        screen.hline(px + 2, py + CELL - 1, 4, code(P_CORE, ready ? 3 : 1));
+
+        const need = lv.core.plates;
+        if (need.length) {
+          const pw = 3, total = need.length * pw - 1;
+          let qx = px + Math.round((CELL - total) / 2);
+          const qy = py - 4;
+          for (const pk of need) {
+            const on = w.high.has(pk);
+            screen.rect(qx, qy, 2, 2, code(on ? LIVE : REST, on ? 3 : 1));
+            qx += pw;
           }
         }
       }
