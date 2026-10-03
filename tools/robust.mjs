@@ -75,7 +75,19 @@ for (const [w, h] of [[320, 240], [1, 1], [200, 180], [1600, 1000], [900, 400], 
 }
 
 console.log('backgrounding...');
-await pg.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+// Actually hide it. This used to dispatch `visibilitychange` while `document.hidden` was still
+  // false, so the only branch it ever ran was the one that resumes — the test named "backgrounding"
+  // never backgrounded anything, and the bug it existed to catch (a pause that never lifts) sat
+  // behind it untouched. Playwright cannot truly hide a tab, so `hidden` is overridden directly.
+  await pg.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await pg.waitForTimeout(400);
+  await pg.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
 await pg.waitForTimeout(500);
 await pg.evaluate(() => window.dispatchEvent(new Event('blur')));
 await pg.waitForTimeout(300);
