@@ -259,6 +259,22 @@ two layouts.
 
 After the fix the same test accumulates 435 ticks and walks the body across the room.
 
+## 6.5 What the purity costs
+
+`run(level, tapes, live)` is re-evaluated from tick 0 on **every tick**. That is obviously quadratic
+in the number of discharges, and it is the one thing about this design that could have made it
+unshippable, so it is measured rather than assumed (`tools/perf.mjs`, worst moment: the last room,
+at its budget, on the final tick of the final discharge).
+
+| room | discharges | ticks re-simulated per frame | cost |
+|---|---|---|---|
+| the keeper | 4 | 2,400 | **0.66ms — 4% of a frame** |
+| everything else | 2–3 | 1,200–1,800 | 0.19–0.28ms |
+
+So the guarantee that a ghost cannot drift from what it recorded costs four per cent of one frame in
+the worst room in the game. That is the whole argument for building it this way: the expensive-
+sounding option was free, and the cheap-sounding one would have had me chasing desync for hours.
+
 ## 7. Verification, as it stands
 
 | | |
@@ -268,6 +284,8 @@ After the fix the same test accumulates 435 ticks and walks the body across the 
 | `tools/plans.mjs` | does each candidate plan do what its label says |
 | `tools/play.mjs` | every room played start to finish through `newGame`/`step`, every tick checked |
 | `tools/stress.mjs` | 500 runs / 500 hours of adversarial input, and it reports how much it did |
+| `tools/perf.mjs` | what re-running from tick 0 every tick actually costs |
+| `tools/rooms.mjs` | a picture of every room, because the solver cannot see whether one READS |
 | `tools/robust.mjs` | restarts, resizes, backgrounding, mute spam, audio-node leaks |
 | `tools/mobile.mjs` | (in Filament) all four games on a phone |
 
