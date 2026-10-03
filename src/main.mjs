@@ -7,7 +7,7 @@ import {
   NONE, LEFT, RIGHT, UP, DOWN, ACT,
 } from './sim.mjs';
 import { LEVELS } from './levels.mjs';
-import { draw, addShake, fx, OX, OY } from './render.mjs';
+import { draw, addShake, fx, OX, OY, abandonBox, drawAbandon } from './render.mjs';
 import * as audio from './audio.mjs';
 
 const DEV = location.search.includes('dev');
@@ -75,7 +75,13 @@ canvas.addEventListener('pointerdown', (e) => {
   const x = ((e.clientX - r.left) / r.width) * W;
   const y = ((e.clientY - r.top) / r.height) * H;
   if (scene !== 'play') { buffered.push('ok'); return; }
-  if (y > OY + 16 * CELL + 2) { buffered.push('rewind'); return; }   // below the room: give up on this loop
+  // the abandon button, and nothing else outside the room, because a stray thumb must not be able
+  // to discard ten seconds of a plan
+  const ab = abandonBox();
+  if (x >= ab.x && x < ab.x + ab.w && y >= ab.y - 4 && y < ab.y + ab.h + 4) {
+    buffered.push('rewind');
+    return;
+  }
   const cx = Math.floor((x - OX) / CELL), cy = Math.floor((y - OY) / CELL);
   if (cx < 0 || cy < 0 || cx >= CW || cy >= 16) return;
   walkTo = { x: cx, y: cy };
@@ -240,13 +246,16 @@ function drawChrome() {
   // Clipped, because `centre` does not wrap and does not shrink: a label one character too long
   // simply runs off both edges of the screen, which is what the first five of these did.
   screen.centre(6, clip(lv.name), code(2, 3));
-  screen.centre(16, clip(lv.teaches), code(2, 2));
-  if (noteT > 0) screen.centre(OY - 24, note, code(3, 3));
+  // The note takes the subtitle's place rather than being printed near it. Drawn just below, the
+  // two lines overlapped and both became unreadable at exactly the moment the note mattered.
+  if (noteT > 0) screen.centre(16, note, code(3, 3));
+  else screen.centre(16, clip(lv.teaches), code(2, 2));
 
   const n = state.level.budget - state.tapes.length;
   const word = `${n} left`;
   screen.text(W - 8 - screen.textWidth(word), H - 12, word, code(2, 2));
   screen.text(8, H - 12, `room ${room + 1}/${LEVELS.length}`, code(2, 2));
+  drawAbandon(screen, state.live.length > 0);
 }
 
 function drawTitle() {

@@ -215,3 +215,66 @@ Written as it happened. Entries are added when something is established or somet
 | two voices | two plates HIGH on the same tick | 3 |
 | the long room | a door on the way to the core must be held open at the end too | 3 |
 | the keeper | all of it | 4 |
+
+---
+
+## 5. The half the harness cannot see
+
+Every bug above was found by a tool. Everything below was found by looking at a screenshot, which
+is the lesson this project keeps paying for: **no tool in any of these four repos imports
+`render.mjs`**, so a soak harness proves the simulation is sound and proves nothing about the half
+of the code a player experiences.
+
+- **The palette check now refuses an entry that holds the backdrop colour**, and caught three faults
+  before a single frame was drawn. The sea would have vanished as the bank died; the core's whiteout
+  would have erased the room it was celebrating; and `C.pale` pointed at `$20`, which is the same
+  `#fefeff` as `$30`, so the bright end of the ramp had two identical steps and `pale` was white
+  under another name. Some version of this trap has now cost four games part of a frame. It is
+  checked rather than remembered.
+- **The sea was drawn behind the room as well as around it**, and the deck was filled from the same
+  palette — so the floor and the water were the same darkness and the room had no inside.
+- **The deck and the bulkheads were near-neighbour blues.** The structure of the room, which is the
+  thing the entire game is planned against, was being carried by a one-pixel highlight along the top
+  of each wall.
+- **The afterimages were drawn solid**, which made four of them read as four more people in a
+  slightly different colour. Dithered every frame, they read as light burned into the dark, and the
+  live body becomes the only solid figure in the room.
+- **The toast printed on top of the room's subtitle**, so both became unreadable at exactly the
+  moment the toast had something to say. It takes the subtitle's place instead.
+- **Labels ran off both edges of the screen.** `centre` does not wrap and has no ellipsis; five of
+  the first five labels were too long. They are clipped, and the lengths are checked.
+
+## 6. The touch bug, found the same way as the last three
+
+`tools/mobile.mjs` drives the live game in a 390×844 touch context. It reported the room advancing
+only 48 ticks over eighteen seconds of tapping — because the entire band below the room abandoned
+the current discharge, and the test kept hitting it.
+
+That is not a test artefact. On a phone it means a stray thumb throws away up to ten seconds of a
+plan, with no warning and no undo, in a game whose unit of play is a plan. It is a 68×14 button now,
+and **the hit box is exported by the renderer rather than restated in the input layer** — because
+Lockout shipped with a hit box twelve pixels narrower than the card it was testing, and The Far
+Light shipped a verifier that reimplemented the physics it was verifying. Two copies of a layout are
+two layouts.
+
+After the fix the same test accumulates 435 ticks and walks the body across the room.
+
+## 7. Verification, as it stands
+
+| | |
+|---|---|
+| `tools/lint.mjs` | can anything be reached at all — asked before anything harder |
+| `tools/solve.mjs` | the minimum discharges per room, every plan judged by the real `run()` |
+| `tools/plans.mjs` | does each candidate plan do what its label says |
+| `tools/play.mjs` | every room played start to finish through `newGame`/`step`, every tick checked |
+| `tools/stress.mjs` | 500 runs / 500 hours of adversarial input, and it reports how much it did |
+| `tools/robust.mjs` | restarts, resizes, backgrounding, mute spam, audio-node leaks |
+| `tools/mobile.mjs` | (in Filament) all four games on a phone |
+
+**A harness that pressed nothing proves nothing.** Three separate times tonight a test passed by
+never exercising the thing it tested: a solver reporting "no solution" because its plans were never
+really tried, the same solver's push loop missed by a fix applied to three of its four sites, and
+`stress.mjs` pressing `NONE` for three hundred runs because `rng.int` takes two arguments and was
+given one — `DIRS[NaN]` is `undefined`, and `undefined & 15` is `0`. So the soak now counts the
+distinct inputs it issued, the steps taken, the crates moved and the ticks on which a plate was held,
+and says **THE HARNESS BARELY RAN** rather than reporting a pass.

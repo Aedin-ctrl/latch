@@ -41,7 +41,10 @@ const set = (name, backdrop, bg, spr) => ({ name, backdrop, bg, spr });
 // spr0 you · spr1 an afterimage · spr2 a crate · spr3 the core
 export const CHARGED = set('charged', C.black,
   [
-    [C.navy,   C.indigo, C.steel],          // plating: deck dark, bulkheads brighter
+    // Deck dark, bulkheads bright. The first version had the deck navy and the walls indigo,
+    // which are near neighbours, so the structure of the room — the thing you plan against —
+    // was carried entirely by a one-pixel highlight along the top of each wall.
+    [C.navy,   C.steel,  C.sky],
     [C.deep,   C.teal,   C.cyan],           // the sea, below and around
     [C.olive,  C.brass,  C.sand],           // a plate or a door with nothing on it
     [C.jade,   C.spring, C.mint],           // and the same thing carrying a signal

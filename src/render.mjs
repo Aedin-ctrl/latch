@@ -224,4 +224,26 @@ function drawClock(screen, state, t) {
   }
 }
 
+/**
+ * The one on-screen button, and the only place a tap may throw work away.
+ *
+ * The whole band below the room used to do this, which on a phone means a stray thumb discards up
+ * to ten seconds of a plan with no warning and no undo. Exported rather than restated in the input
+ * layer, because Lockout shipped with a hit box 12 pixels narrower than the card it was testing.
+ */
+export function abandonBox() {
+  return { x: OX, y: OY + CH * CELL + 16, w: 68, h: 14 };
+}
+
+export function drawAbandon(screen, enabled) {
+  const b = abandonBox();
+  const pal = enabled ? REST : PLATING;
+  screen.rect(b.x, b.y, b.w, b.h, code(pal, 1));
+  screen.hline(b.x, b.y, b.w, code(pal, enabled ? 3 : 2));
+  screen.hline(b.x, b.y + b.h - 1, b.w, code(pal, 2));
+  screen.vline(b.x, b.y, b.h, code(pal, 2));
+  screen.vline(b.x + b.w - 1, b.y, b.h, code(pal, 2));
+  screen.centreIn(b.x, b.w, b.y + 4, 'abandon', code(pal, enabled ? 3 : 2));
+}
+
 export { OX, OY };
