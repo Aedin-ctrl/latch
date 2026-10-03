@@ -58,7 +58,7 @@ function parse({ name, art, wiring, core, budget, teaches }) {
 export const LEVELS = [
   parse({
     name: 'the discharge',
-    teaches: 'the loop, and that you come back',
+    teaches: 'you come back. so does the last',
     // One plate, one door, one core. You cannot stand on the plate and walk through the door, so
     // the room is a two-line proof that the game needs ghosts at all.
     art: `
@@ -86,7 +86,7 @@ export const LEVELS = [
 
   parse({
     name: 'the crate',
-    teaches: 'a crate holds a signal without spending a body',
+    teaches: 'a crate can hold a plate',
     // The same shape, but there is a crate. One loop to push it onto the plate, one to walk
     // through — which looks like the room above until you notice the budget is still 2 and there
     // are now TWO doors.
@@ -115,7 +115,7 @@ export const LEVELS = [
 
   parse({
     name: 'two voices',
-    teaches: 'two plates HIGH at the same time',
+    teaches: 'two plates, on the same tick',
     // The core itself is wired. Nothing opens a way through: you simply have to be in two places
     // on one tick, which is three loops — one for each plate, and one to stand on the core.
     art: `
@@ -143,7 +143,7 @@ export const LEVELS = [
 
   parse({
     name: 'the long room',
-    teaches: 'a ghost can be somewhere it takes the whole loop to reach',
+    teaches: 'the way out stays open too',
     // The far plate is a long walk. Holding it costs a whole discharge, and the crate is the only
     // way to buy the second signal back.
     art: `
